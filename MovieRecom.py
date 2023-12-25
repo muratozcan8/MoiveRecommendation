@@ -1,10 +1,10 @@
-import random
 import pandas as pd
 import re
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 from flask import Flask, render_template, request
+from difflib import get_close_matches
 
 app = Flask(__name__)
 
@@ -45,25 +45,33 @@ def find_similar_movies(movie_id):
 
     rec_percentages["score"] = rec_percentages["similar"] / rec_percentages["all"]
     rec_percentages = rec_percentages.sort_values("score", ascending=False)
+    rec_percentages["score"] = rec_percentages["score"].round(2)
     return rec_percentages.head(10).merge(movies, left_index=True, right_on="movieId")[["score", "title", "genres"]]
 
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     results = []
+    similarity = []
+
     if request.method == "POST":
         user_movie_input = request.form["user_movie_input"]
         user_input_cleaned = clean_title(user_movie_input)
         found_movies = movies[movies['clean_title'].str.lower() == user_input_cleaned.lower()]
+
         if found_movies.empty:
-            results.append({"message": "Movie not found in the dataset."})
+            similar_titles = get_close_matches(user_movie_input, movies['clean_title'], n=5, cutoff=0.6)
+            if similar_titles:
+                similarity.extend([{"message": f"{', '.join(similar_titles)}"}])
+            else:
+                similarity.extend([{"message": "Movie not found in the dataset."}])
         else:
             search_results = search(user_movie_input)
             movie_id = search_results.iloc[0]["movieId"]
             similar_movies = find_similar_movies(movie_id)
             results.extend(similar_movies[["score", "title", "genres"]].to_dict(orient="records"))
-
-    return render_template("index.html", results=results)
+    
+    return render_template("index.html", results=results, similarity=similarity)
 
 
 if __name__ == "__main__":
